@@ -38,6 +38,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     next();
   };
 
+  const requireAdmin = (req: any, res: any, next: any) => {
+    if (!req.session?.user) {
+      return res.status(401).json({ message: "Authentication required" });
+    }
+    if (req.session.user.role !== "admin") {
+      return res.status(403).json({ message: "Admin access required" });
+    }
+    next();
+  };
+
   // Authentication routes
   app.post("/api/auth/login", async (req, res) => {
     try {
@@ -47,13 +57,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const user = await storage.getUserByUsername(username);
       
       if (!user) {
+        // For admin role, restrict to specific username
+        if (role === "admin" && username !== "admin") {
+          return res.status(401).json({ message: "Invalid admin credentials" });
+        }
+        
         // Create default users for demo
         const newUser = await storage.upsertUser({
           id: `${role}_${username}`,
           username,
-          email: `${username}@goldlend.com`,
-          firstName: username.charAt(0).toUpperCase() + username.slice(1),
-          lastName: role.charAt(0).toUpperCase() + role.slice(1),
+          email: `${username}@goldlending.com`,
+          firstName: username === "admin" ? "System" : username.charAt(0).toUpperCase() + username.slice(1),
+          lastName: username === "admin" ? "Administrator" : "User",
           role: role as "operator" | "admin",
           permissions: role === "admin" ? ["all"] : ["view", "create", "edit"],
         });
@@ -98,7 +113,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (!req.session?.user) {
       return res.status(401).json({ message: "Not authenticated" });
     }
-    res.json({ user: req.session.user });
+    res.json(req.session.user);
   });
 
   // Customer routes
@@ -262,8 +277,54 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Admin: Create operator (Admin only)
+  app.post("/api/admin/operators", requireAdmin, async (req: any, res) => {
+    try {
+      const { username, email, firstName, lastName, permissions } = req.body;
+      
+      // Check if user already exists
+      const existingUser = await storage.getUserByUsername(username);
+      if (existingUser) {
+        return res.status(400).json({ message: "Username already exists" });
+      }
+      
+      const operatorId = `operator_${username}_${Date.now()}`;
+      const newOperator = await storage.upsertUser({
+        id: operatorId,
+        username,
+        email,
+        firstName,
+        lastName,
+        role: "operator",
+        isActive: true,
+        permissions: permissions || ["view", "create", "edit"],
+      });
+      
+      await storage.logActivity({
+        userId: req.session.user.id,
+        action: "create_operator",
+        entityType: "operator",
+        entityId: newOperator.id,
+        details: { operatorName: `${firstName} ${lastName}`, username },
+        ipAddress: req.ip || "",
+      });
+      
+      res.status(201).json({ 
+        operator: newOperator,
+        credentials: {
+          username,
+          password: "operator123",
+          message: "Operator can login with any password using this username"
+        }
+      });
+    } catch (error) {
+      console.error("Error creating operator:", error);
+      res.status(500).json({ message: "Failed to create operator" });
+    }
+  });
+
   // Admin routes
-  app.get("/api/admin/operators", requireAuth, requireRole(["admin"]), async (req, res) => {
+  app.get("/api/operators", requireAdmin, async (req, res) => {
     try {
       const operators = await storage.getOperators();
       res.json(operators);
@@ -273,7 +334,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.put("/api/admin/operators/:id/permissions", requireAuth, requireRole(["admin"]), async (req, res) => {
+  app.put("/api/operators/:id/permissions", requireAdmin, async (req, res) => {
     try {
       const { id } = req.params;
       const { permissions } = req.body;
@@ -296,7 +357,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/admin/operators/:id", requireAuth, requireRole(["admin"]), async (req, res) => {
+  app.put("/api/operators/:id/deactivate", requireAdmin, async (req: any, res) => {
     try {
       const { id } = req.params;
       
@@ -318,7 +379,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/admin/analytics", requireAuth, requireRole(["admin"]), async (req, res) => {
+  app.get("/api/admin/analytics", requireAdmin, async (req, res) => {
     try {
       const analytics = await storage.getAnalytics();
       res.json(analytics);
@@ -328,7 +389,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/admin/activities", requireAuth, requireRole(["admin"]), async (req, res) => {
+  app.get("/api/admin/activities", requireAdmin, async (req, res) => {
     try {
       const { limit } = req.query;
       const activities = await storage.getRecentActivities(
