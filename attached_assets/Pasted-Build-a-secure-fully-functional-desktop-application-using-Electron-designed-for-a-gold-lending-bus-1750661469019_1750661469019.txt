@@ -1,0 +1,66 @@
+Build a secure, fully functional desktop application using Electron, designed for a gold lending business. The application should have two user roles: Operator and Admin. It must use SQLite for local data storage and automatically sync data to online Excel sheets (e.g., in Google Drive or OneDrive) once internet connectivity is available. Each month’s data must go into a separate Excel sheet.
+
+🔐 Roles & Features
+👷 Operator Features:
+Can search customers by name, phone, Aadhaar, or any provided field.
+
+Can view customer profile, showing:
+
+Personal details (Name, Address, Phone, Aadhaar, etc.)
+
+Loan history and active loans.
+
+Can add new customers via a registration form.
+
+Can add new loans to existing customers.
+
+Data is stored locally in a SQL database.
+
+Automatically syncs to an Excel sheet in online storage (Google Drive preferred) once internet is available.
+
+Each month has a separate Excel sheet named YYYY-MM-GoldLoans.xlsx.
+
+👑 Admin Features:
+Can add, remove, and manage Operators.
+
+Can assign/restrict permissions for each operator (e.g., restrict access to view/edit/delete).
+
+Can add or remove form fields for:
+
+Customer registration.
+
+Loan issuing forms.
+
+Can view all active loans with filters (e.g., by due date, amount, customer name).
+
+Can search customers across the full database.
+
+Admin dashboard should be password-protected.
+
+⚙️ Technical Requirements
+Use Electron for the desktop shell.
+
+Use SQLite for offline data storage.
+
+Use Google Sheets API or Microsoft Excel API for online sync:
+
+Automatically detect internet connection.
+
+Create a new sheet for every month, if not already created.
+
+Sync all unsynced data when online.
+
+App should have a user-friendly UI with navigation for Operator/Admin views.
+
+Modular code structure for maintainability.
+
+✅ Optional but Useful Features
+Login system (admin/operator separation).
+
+Export data manually as Excel or PDF.
+
+Alert operators when loan due dates are approaching.
+
+Logs for syncing and admin actions.
+
+Theme support (dark/light).
