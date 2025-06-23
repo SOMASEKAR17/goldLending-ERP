@@ -1,4 +1,4 @@
-import type { Express } from "express";
+import type { Express, Request } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { 
@@ -8,6 +8,13 @@ import {
   insertFormFieldSchema 
 } from "@shared/schema";
 import { z } from "zod";
+
+// Extend Express Request interface to include session
+declare module 'express-session' {
+  interface SessionData {
+    user?: any;
+  }
+}
 
 const loginSchema = z.object({
   username: z.string().min(1),
@@ -58,7 +65,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           entityType: "auth",
           entityId: newUser.id,
           details: { role },
-          ipAddress: req.ip,
+          ipAddress: req.ip || "",
         });
         
         return res.json({ user: newUser });
@@ -71,7 +78,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         entityType: "auth",
         entityId: user.id,
         details: { role: user.role },
-        ipAddress: req.ip,
+        ipAddress: req.ip || "",
       });
       
       res.json({ user });
@@ -143,7 +150,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         entityType: "customer",
         entityId: customer.id.toString(),
         details: { customerName: customer.fullName },
-        ipAddress: req.ip,
+        ipAddress: req.ip || "",
       });
       
       res.status(201).json(customer);
@@ -208,7 +215,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         entityType: "loan",
         entityId: loan.id.toString(),
         details: { loanId: loan.loanId, amount: loan.loanAmount },
-        ipAddress: req.ip,
+        ipAddress: req.ip || "",
       });
       
       res.status(201).json(loan);
@@ -245,7 +252,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         entityType: "payment",
         entityId: payment.id.toString(),
         details: { amount: payment.amount, loanId: payment.loanId },
-        ipAddress: req.ip,
+        ipAddress: req.ip || "",
       });
       
       res.status(201).json(payment);
@@ -278,8 +285,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         action: "update_operator_permissions",
         entityType: "operator",
         entityId: id,
-        details: { permissions },
-        ipAddress: req.ip,
+        details: { permissions: permissions },
+        ipAddress: req.ip || "",
       });
       
       res.json(operator);
@@ -301,7 +308,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         entityType: "operator",
         entityId: id,
         details: { operatorName: `${operator.firstName} ${operator.lastName}` },
-        ipAddress: req.ip,
+        ipAddress: req.ip || "",
       });
       
       res.json({ message: "Operator deactivated successfully" });
@@ -357,7 +364,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         entityType: "form_field",
         entityId: field.id.toString(),
         details: { fieldName: field.fieldName, formType: field.formType },
-        ipAddress: req.ip,
+        ipAddress: req.ip || "",
       });
       
       res.status(201).json(field);

@@ -98,8 +98,6 @@ export class DatabaseStorage implements IStorage {
 
   // Customer operations
   async getCustomers(search?: string, operatorId?: string): Promise<Customer[]> {
-    let query = db.select().from(customers);
-    
     const conditions = [];
     
     if (search) {
@@ -118,10 +116,10 @@ export class DatabaseStorage implements IStorage {
     }
     
     if (conditions.length > 0) {
-      query = query.where(and(...conditions));
+      return await db.select().from(customers).where(and(...conditions)).orderBy(desc(customers.createdAt));
     }
     
-    return await query.orderBy(desc(customers.createdAt));
+    return await db.select().from(customers).orderBy(desc(customers.createdAt));
   }
 
   async getCustomer(id: number): Promise<Customer | undefined> {
@@ -197,7 +195,7 @@ export class DatabaseStorage implements IStorage {
     const conditions = [];
     
     if (filters?.status) {
-      conditions.push(eq(loans.status, filters.status));
+      conditions.push(eq(loans.status, filters.status as any));
     }
     
     if (filters?.operatorId) {
@@ -209,10 +207,107 @@ export class DatabaseStorage implements IStorage {
     }
     
     if (conditions.length > 0) {
-      query = query.where(and(...conditions));
+      return await db
+        .select({
+          id: loans.id,
+          loanId: loans.loanId,
+          customerId: loans.customerId,
+          operatorId: loans.operatorId,
+          loanAmount: loans.loanAmount,
+          goldWeight: loans.goldWeight,
+          goldPurity: loans.goldPurity,
+          interestRate: loans.interestRate,
+          duration: loans.duration,
+          status: loans.status,
+          issueDate: loans.issueDate,
+          dueDate: loans.dueDate,
+          customFields: loans.customFields,
+          createdAt: loans.createdAt,
+          updatedAt: loans.updatedAt,
+          customer: {
+            id: customers.id,
+            fullName: customers.fullName,
+            phoneNumber: customers.phoneNumber,
+            aadhaarNumber: customers.aadhaarNumber,
+            email: customers.email,
+            address: customers.address,
+            dateOfBirth: customers.dateOfBirth,
+            occupation: customers.occupation,
+            customFields: customers.customFields,
+            operatorId: customers.operatorId,
+            createdAt: customers.createdAt,
+            updatedAt: customers.updatedAt,
+          },
+          operator: {
+            id: users.id,
+            username: users.username,
+            email: users.email,
+            firstName: users.firstName,
+            lastName: users.lastName,
+            profileImageUrl: users.profileImageUrl,
+            role: users.role,
+            isActive: users.isActive,
+            permissions: users.permissions,
+            createdAt: users.createdAt,
+            updatedAt: users.updatedAt,
+          },
+        })
+        .from(loans)
+        .innerJoin(customers, eq(loans.customerId, customers.id))
+        .innerJoin(users, eq(loans.operatorId, users.id))
+        .where(and(...conditions))
+        .orderBy(desc(loans.createdAt));
     }
     
-    return await query.orderBy(desc(loans.createdAt));
+    return await db
+      .select({
+        id: loans.id,
+        loanId: loans.loanId,
+        customerId: loans.customerId,
+        operatorId: loans.operatorId,
+        loanAmount: loans.loanAmount,
+        goldWeight: loans.goldWeight,
+        goldPurity: loans.goldPurity,
+        interestRate: loans.interestRate,
+        duration: loans.duration,
+        status: loans.status,
+        issueDate: loans.issueDate,
+        dueDate: loans.dueDate,
+        customFields: loans.customFields,
+        createdAt: loans.createdAt,
+        updatedAt: loans.updatedAt,
+        customer: {
+          id: customers.id,
+          fullName: customers.fullName,
+          phoneNumber: customers.phoneNumber,
+          aadhaarNumber: customers.aadhaarNumber,
+          email: customers.email,
+          address: customers.address,
+          dateOfBirth: customers.dateOfBirth,
+          occupation: customers.occupation,
+          customFields: customers.customFields,
+          operatorId: customers.operatorId,
+          createdAt: customers.createdAt,
+          updatedAt: customers.updatedAt,
+        },
+        operator: {
+          id: users.id,
+          username: users.username,
+          email: users.email,
+          firstName: users.firstName,
+          lastName: users.lastName,
+          profileImageUrl: users.profileImageUrl,
+          role: users.role,
+          isActive: users.isActive,
+          permissions: users.permissions,
+          createdAt: users.createdAt,
+          updatedAt: users.updatedAt,
+        },
+      })
+      .from(loans)
+      .innerJoin(customers, eq(loans.customerId, customers.id))
+      .innerJoin(users, eq(loans.operatorId, users.id))
+      .orderBy(desc(loans.createdAt));
   }
 
   async getLoan(id: number) {
@@ -346,14 +441,32 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createFormField(field: InsertFormField): Promise<FormField> {
-    const [newField] = await db.insert(formFields).values(field).returning();
+    const [newField] = await db.insert(formFields).values({
+      formType: field.formType,
+      fieldName: field.fieldName,
+      fieldLabel: field.fieldLabel,
+      fieldType: field.fieldType,
+      isRequired: field.isRequired,
+      options: field.options as string[] | null,
+      isActive: field.isActive,
+      sortOrder: field.sortOrder,
+    }).returning();
     return newField;
   }
 
   async updateFormField(id: number, field: Partial<InsertFormField>): Promise<FormField> {
     const [updatedField] = await db
       .update(formFields)
-      .set(field)
+      .set({
+        formType: field.formType,
+        fieldName: field.fieldName,
+        fieldLabel: field.fieldLabel,
+        fieldType: field.fieldType,
+        isRequired: field.isRequired,
+        options: field.options as string[] | null,
+        isActive: field.isActive,
+        sortOrder: field.sortOrder,
+      })
       .where(eq(formFields.id, id))
       .returning();
     return updatedField;
