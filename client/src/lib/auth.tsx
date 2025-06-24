@@ -24,7 +24,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const response = await fetch("/api/auth/me", { credentials: "include" });
       if (response.ok) {
         const data = await response.json();
-        setUser(data.user);
+        setUser(data);
       }
     } catch (error) {
       console.error("Auth check failed:", error);
@@ -34,18 +34,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const login = async (username: string, password: string, role: "operator" | "admin") => {
-    const response = await apiRequest("POST", "/api/auth/login", {
-      username,
-      password,
-      role,
+    const response = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      credentials: "include",
+      body: JSON.stringify({ username, password, role }),
     });
     
     const data = await response.json();
-    setUser(data.user);
+    
+    if (!response.ok) {
+      throw new Error(data.message || "Login failed");
+    }
+    
+    setUser(data);
   };
 
   const logout = async () => {
-    await apiRequest("POST", "/api/auth/logout");
+    await fetch("/api/auth/logout", {
+      method: "POST",
+      credentials: "include",
+    });
     setUser(null);
   };
 

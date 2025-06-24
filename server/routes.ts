@@ -53,15 +53,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { username, password, role } = loginSchema.parse(req.body);
       
+      // For admin role, only allow "admin" username
+      if (role === "admin" && username !== "admin") {
+        return res.status(401).json({ message: "Only 'admin' username is allowed for admin role" });
+      }
+      
       // Simple auth - in production, use proper password hashing
-      const user = await storage.getUserByUsername(username);
+      let user = await storage.getUserByUsername(username);
       
       if (!user) {
-        // For admin role, restrict to specific username
-        if (role === "admin" && username !== "admin") {
-          return res.status(401).json({ message: "Invalid admin credentials" });
-        }
-        
         // Create default users for demo
         const newUser = await storage.upsertUser({
           id: `${role}_${username}`,
@@ -70,6 +70,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           firstName: username === "admin" ? "System" : username.charAt(0).toUpperCase() + username.slice(1),
           lastName: username === "admin" ? "Administrator" : "User",
           role: role as "operator" | "admin",
+          isActive: true,
           permissions: role === "admin" ? ["all"] : ["view", "create", "edit"],
         });
         
@@ -79,11 +80,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
           action: "login",
           entityType: "auth",
           entityId: newUser.id,
-          details: { role },
+          details: { role: newUser.role },
           ipAddress: req.ip || "",
         });
         
-        return res.json({ user: newUser });
+        return res.json(newUser);
+      }
+      
+      // Check if existing user's role matches requested role
+      if (user.role !== role) {
+        return res.status(401).json({ message: "Invalid role for this user" });
       }
       
       req.session.user = user;
@@ -96,7 +102,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ipAddress: req.ip || "",
       });
       
-      res.json({ user });
+      res.json(user);
     } catch (error) {
       console.error("Login error:", error);
       res.status(400).json({ message: "Invalid credentials" });
