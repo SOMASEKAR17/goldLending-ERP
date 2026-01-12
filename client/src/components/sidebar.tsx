@@ -13,7 +13,6 @@ export default function Sidebar({ role, activeSection, onSectionChange }: Sideba
 
   const operatorNavItems = [
     { id: "search", label: "Search Customers", icon: "🔍" },
-    { id: "register", label: "Register Customer", icon: "👤" },
     { id: "loans", label: "Active Loans", icon: "🤝" },
   ];
 

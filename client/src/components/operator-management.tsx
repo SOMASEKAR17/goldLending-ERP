@@ -1,6 +1,17 @@
-import { useState } from "react";
+// sms for every payment and loan disbusment
+// what kin of report is required
+// webcam integrate
+// 
+
+
+
+
+
+import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useQuery } from '@tanstack/react-query';
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -10,34 +21,137 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import CreateOperatorModal from "./create-operator-modal";
 import { UserPlus, Search, Settings, UserX } from "lucide-react";
+import EditOperatorModal from "./EditOperatorModel";
 
 export default function OperatorManagement() {
+
+  const [isOpen, setIsOpen] = useState(false);
+
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const { data: operators, isLoading } = useQuery({
-    queryKey: ["/api/admin/operators"],
+  const [operators, setOperators] = useState([]);
+const [isLoading, setIsLoading] = useState(true);
+const [error, setError] = useState("");
+
+const [selectedOperator, setSelectedOperator] = useState(null);
+const [editOpen, setEditOpen] = useState(false);
+
+const updateOperator = async ({ id, permissions }: any) => {
+  try {
+    const res = await fetch(`/api/operators/${id}/permissions`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ permissions }),
   });
 
-  const deactivateOperatorMutation = useMutation({
-    mutationFn: async (operatorId: string) => {
-      await apiRequest("DELETE", `/api/admin/operators/${operatorId}`);
-    },
-    onSuccess: () => {
-      toast({
-        title: "Operator deactivated",
-        description: "The operator has been deactivated successfully.",
-      });
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/operators"] });
-    },
-    onError: () => {
-      toast({
-        title: "Deactivation failed",
-        description: "Failed to deactivate operator. Please try again.",
-        variant: "destructive",
-      });
-    },
-  });
+    if (!res.ok) throw new Error("Failed to update operator");
+
+    toast({
+      title: "Operator updated",
+      description: "Details updated successfully.",
+    });
+
+    setEditOpen(false);
+    fetchOperators();
+  } catch (error: any) {
+    toast({
+      title: "Update failed",
+      description: error.message,
+      variant: "destructive",
+    });
+  }
+};
+
+const fetchOperators = async () => {
+  try {
+    setIsLoading(true);
+    const res = await fetch("/api/admin/fetch/operators", {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (!res.ok) {
+      const errorData = await res.json();
+      throw new Error(errorData.message || "Failed to fetch operators");
+    }
+
+    const data = await res.json();
+    setOperators(data);
+  } catch (err: any) {
+    console.error("Error fetching operators:", err);
+    setError(err.message || "Something went wrong");
+  } finally {
+    setIsLoading(false);
+  }
+};
+
+useEffect(() => {
+  fetchOperators();
+}, []);
+
+
+ const deactivateOperator = async (operatorId: string) => {
+  try {
+    const res = await fetch(`/api/operators/deactivate/${operatorId}`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.message || "Failed to deactivate");
+    }
+
+    toast({
+      title: "Operator deactivated",
+      description: "The operator has been deactivated successfully.",
+    });
+
+    fetchOperators(); // Refresh data
+  } catch (error: any) {
+    console.error("Error deactivating operator:", error);
+    toast({
+      title: "Deactivation failed",
+      description: error.message || "Something went wrong",
+      variant: "destructive",
+    });
+  }
+};
+
+const reactivateOperator = async (operatorId: string) => {
+  try {
+    const res = await fetch(`/api/operators/reactivate/${operatorId}`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.message || "Failed to reactivate");
+    }
+
+    toast({
+      title: "Operator reactivated",
+      description: "The operator has been reactivated successfully.",
+    });
+
+    fetchOperators(); // Refresh data
+  } catch (error: any) {
+    console.error("Error reactivating operator:", error);
+    toast({
+      title: "Reactivation failed",
+      description: error.message || "Something went wrong",
+      variant: "destructive",
+    });
+  }
+};
 
   const getPermissionBadges = (permissions: string[]) => {
     const permissionLabels = {
@@ -67,12 +181,20 @@ export default function OperatorManagement() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-semibold text-gray-800">Manage Operators</h2>
-        <Button>
+        <Button onClick={() => setIsOpen(true)}>
           ➕ Add New Operator
         </Button>
       </div>
+      <EditOperatorModal
+  isOpen={editOpen}
+  onClose={() => setEditOpen(false)}
+  operator={selectedOperator}
+  onSave={updateOperator}
+/>
 
-      <Card>
+<CreateOperatorModal isOpen={isOpen} onClose={() => setIsOpen(false)} />
+
+      <Card className="bg-zinc-100">
         <CardContent>
           {isLoading ? (
             <div className="space-y-4">
@@ -140,18 +262,35 @@ export default function OperatorManagement() {
                       </td>
                       <td className="py-4 px-4">
                         <div className="flex space-x-2">
-                          <Button size="sm" variant="outline">
-                            Edit
-                          </Button>
-                          {operator.isActive && (
+                          
+                          {operator.isActive ? (<>
+                            <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setSelectedOperator(operator);
+                            setEditOpen(true);
+                          }}
+                        >
+                          Edit
+                        </Button>
                             <Button
                               size="sm"
                               variant="outline"
-                              onClick={() => deactivateOperatorMutation.mutate(operator.id)}
-                              disabled={deactivateOperatorMutation.isPending}
+                              onClick={() => deactivateOperator(operator.id)}
                             >
-                              Remove
-                            </Button>
+                              Deactivate
+                            </Button></>
+
+                          ): (
+                            <><p className="text-red-800 ml-5 mr-4">⊘</p>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => reactivateOperator(operator.id)}
+                            >
+                              Reactivate
+                            </Button></>
                           )}
                         </div>
                       </td>

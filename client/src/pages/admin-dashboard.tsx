@@ -5,6 +5,7 @@ import OperatorManagement from "@/components/operator-management";
 import CustomerSearch from "@/components/customer-search";
 import ActiveLoans from "@/components/active-loans";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import CategoryCreationCard from "@/components/general-settings"
 
 type AdminSection = "dashboard" | "operators" | "customers" | "loans" | "forms" | "reports";
 
@@ -35,12 +36,10 @@ export default function AdminDashboard() {
         return (
           <Card>
             <CardHeader>
-              <CardTitle>Form Field Configuration</CardTitle>
+              <CardTitle>Category Configuration</CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-gray-600">
-                Dynamic form field management for customer registration and loan forms will be implemented here.
-              </p>
+              <CategoryCreationCard />
             </CardContent>
           </Card>
         );
@@ -79,8 +78,6 @@ export default function AdminDashboard() {
             </h1>
             <div className="flex items-center space-x-4">
               <div className="flex items-center space-x-2 text-sm text-gray-600">
-                <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                <span>System Healthy</span>
               </div>
               <button className="bg-primary text-white px-4 py-2 rounded-lg hover:bg-primary/90 font-medium transition text-sm">
                 Export Data

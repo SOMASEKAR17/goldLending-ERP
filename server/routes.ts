@@ -5,9 +5,17 @@ import {
   insertCustomerSchema, 
   insertLoanSchema, 
   insertPaymentSchema,
-  insertFormFieldSchema 
+  insertFormFieldSchema,
+  insertLoanCategorySchema,
+  insertCategoryRangeSchema
 } from "@shared/schema";
 import { z } from "zod";
+
+import {db } from "./db";
+
+
+import { loginSchema } from "@shared/schema";
+import { log } from "console";
 
 // Extend Express Request interface to include session
 declare module 'express-session' {
@@ -16,11 +24,7 @@ declare module 'express-session' {
   }
 }
 
-const loginSchema = z.object({
-  username: z.string().min(1),
-  password: z.string().min(1),
-  role: z.enum(["operator", "admin"]),
-});
+
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Simple authentication middleware
@@ -48,6 +52,131 @@ export async function registerRoutes(app: Express): Promise<Server> {
     next();
   };
 
+  // Create a loan category (Admin only)
+app.post("/api/loan-categories", requireAdmin, async (req, res) => {
+  try {
+    const data = insertLoanCategorySchema.parse(req.body);
+    const category = await storage.createLoanCategory(data);
+
+    await storage.logActivity({
+      userId: req.session.user.id,
+      action: "create_loan_category",
+      entityType: "loan_category",
+      entityId: category.id.toString(),
+      details: { name: [category.name] },
+      ipAddress: req.ip || "",
+    });
+
+    res.status(201).json(category);
+  } catch (error) {
+    console.error("Create loan category error:", error);
+    res.status(400).json({ message: "Failed to create loan category" });
+  }
+});
+
+// Fetch all loan categories
+app.get("/api/loan-categories", requireAuth, async (req, res) => {
+  try {
+    const categories = await storage.getLoanCategories();
+    res.json(categories);
+  } catch (error) {
+    console.error("Fetch loan categories error:", error);
+    res.status(500).json({ message: "Failed to fetch loan categories" });
+  }
+});
+
+// Delete loan category by ID (Admin only)
+app.delete("/api/loan-categories/:id", requireAdmin, async (req, res) => {
+  try {
+    const categoryId = parseInt(req.params.id);
+    await storage.deleteLoanCategory(categoryId);
+
+    await storage.logActivity({
+      userId: req.session.user.id,
+      action: "delete_loan_category",
+      entityType: "loan_category",
+      entityId: categoryId.toString(),
+      details: { deletedBy: [req.session.user.username] },
+      ipAddress: req.ip || "",
+    });
+
+    res.json({ message: "Loan category deleted" });
+  } catch (error: any) {
+  if (error.code === "23503") {
+    return res.status(400).json({
+      message: "Cannot delete or edit category: It is still being used in existing loans.",
+    });
+  }
+
+  console.error("Delete loan category error:", error);
+  res.status(400).json({ message: "Cannot delete or edit category: It is still being used in existing loans." });
+}})
+
+
+// Add interest range to a loan category (Admin only)
+app.post("/api/category-ranges", requireAdmin, async (req, res) => {
+  try {
+    const data = insertCategoryRangeSchema.parse(req.body);
+    // Map interestRate to interestPercent for storage
+    const range = await storage.addCategoryRange({
+      ...data,
+      interestPercent: data.interestRate,
+    });
+
+    await storage.logActivity({
+      userId: req.session.user.id,
+      action: "add_category_range",
+      entityType: "category_range",
+      entityId: range.id.toString(),
+      details: {
+        categoryId: [range.categoryId.toString()],
+        range: [`${range.fromDays}-${range.toDays} days at ${range.interestPercent}%`],
+      },
+      ipAddress: req.ip || "",
+    });
+
+    res.status(201).json(range);
+  } catch (error) {
+    console.error("Add category range error:", error);
+    res.status(400).json({ message: "Failed to add interest range" });
+  }
+});
+
+// Get interest ranges for a category
+app.get("/api/category-ranges/:categoryId", requireAuth, async (req, res) => {
+  try {
+    const categoryId = parseInt(req.params.categoryId);
+    const ranges = await storage.getCategoryRanges(categoryId);
+    res.json(ranges);
+  } catch (error) {
+    console.error("Fetch category ranges error:", error);
+    res.status(500).json({ message: "Failed to fetch interest ranges" });
+  }
+});
+
+// Delete an interest range
+app.delete("/api/category-ranges/:id", requireAdmin, async (req, res) => {
+  try {
+    const rangeId = parseInt(req.params.id);
+    await storage.deleteCategoryRange(rangeId);
+
+    await storage.logActivity({
+      userId: req.session.user.id,
+      action: "delete_category_range",
+      entityType: "category_range",
+      entityId: rangeId.toString(),
+      details: { deletedBy: [req.session.user.username] },
+      ipAddress: req.ip || "",
+    });
+
+    res.json({ message: "Category range deleted" });
+  } catch (error) {
+    console.error("Delete category range error:", error);
+    res.status(400).json({ message: "Failed to delete category range" });
+  }
+});
+
+
   // Authentication routes
   app.post("/api/auth/login", async (req, res) => {
     try {
@@ -61,35 +190,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Simple auth - in production, use proper password hashing
       let user = await storage.getUserByUsername(username);
       
-      if (!user) {
-        // Create default users for demo
-        const newUser = await storage.upsertUser({
-          id: `${role}_${username}`,
-          username,
-          email: `${username}@goldlending.com`,
-          firstName: username === "admin" ? "System" : username.charAt(0).toUpperCase() + username.slice(1),
-          lastName: username === "admin" ? "Administrator" : "User",
-          role: role as "operator" | "admin",
-          isActive: true,
-          permissions: role === "admin" ? ["all"] : ["view", "create", "edit"],
-        });
-        
-        req.session.user = newUser;
-        await storage.logActivity({
-          userId: newUser.id,
-          action: "login",
-          entityType: "auth",
-          entityId: newUser.id,
-          details: { role: newUser.role },
-          ipAddress: req.ip || "",
-        });
-        
-        return res.json(newUser);
+      if (!user  || user.password !== password) {
+        return res.status(401).json({ message: "Invalid credentials" });
       }
       
+
       // Check if existing user's role matches requested role
       if (user.role !== role) {
         return res.status(401).json({ message: "Invalid role for this user" });
+      }
+
+      if (user.isActive === false) {
+        return res.status(401).json({message:"Your account is inactive. Please contact the administrator."});
       }
       
       req.session.user = user;
@@ -98,7 +210,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         action: "login",
         entityType: "auth",
         entityId: user.id,
-        details: { role: user.role },
+        details: { role: [user.role] },
         ipAddress: req.ip || "",
       });
       
@@ -108,6 +220,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(400).json({ message: "Invalid credentials" });
     }
   });
+
+  app.get("/api/settings/getgst", requireAdmin, async (req, res) => {
+  try {
+    const value = await storage.getGstPercentage();
+    console.log("GST from DB:", value);
+    res.json({ gst: value ?? 0 });
+  } catch (error) {
+    res.status(500).json({ message: "Failed to fetch GST" });
+  }
+});
+
+app.put("/api/settings/gst", requireAdmin, async (req, res) => {
+  try {
+    const { gst } = req.body;
+    if (isNaN(gst)) {
+      return res.status(400).json({ message: "Invalid GST value" });
+    }
+
+    await storage.updateGstPercentage(gst);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ message: "Failed to update GST" });
+  }
+});
+
 
   app.post("/api/auth/logout", (req, res) => {
     req.session.destroy(() => {
@@ -122,16 +259,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json(req.session.user);
   });
 
+  app.get("/api/session", requireAuth, async (req, res) => {
+  try {
+    const user = req.session.user;
+    res.status(200).json(user);
+  } catch (error) {
+    console.error("Session fetch error:", error);
+    res.status(500).json({ message: "Failed to fetch session user" });
+  }
+});
+
+app.post("/api/verify-password", requireAuth, async (req, res) => {
+  try {
+    const { password } = req.body;
+
+    if (!password) {
+      return res.status(400).json({ message: "Password is required" });
+    }
+
+    const sessionUser = req.session.user;
+
+    // Get fresh user from DB by ID or username
+    const user = await storage.getUserByUsername(sessionUser.username);
+
+    if (!user || user.password !== password) {
+      return res.status(401).json({ message: "Invalid password" });
+    }
+
+    res.status(200).json({ success: true });
+  } catch (error) {
+    console.error("Password verification error:", error);
+    res.status(500).json({ message: "Failed to verify password" });
+  }
+});
+
+
   // Customer routes
   app.get("/api/customers", requireAuth, async (req, res) => {
     try {
       const { search } = req.query;
-      const operatorId = req.session.user.role === "operator" ? req.session.user.id : undefined;
-      
-      const customers = await storage.getCustomers(
-        search as string, 
-        operatorId
-      );
+      const customers = await storage.getCustomers(search as string);
+
       
       res.json(customers);
     } catch (error) {
@@ -156,95 +324,188 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/customers", requireAuth, async (req, res) => {
-    try {
-      const customerData = insertCustomerSchema.parse({
-        ...req.body,
-        operatorId: req.session.user.id,
-      });
-      
-      const customer = await storage.createCustomer(customerData);
-      
-      await storage.logActivity({
-        userId: req.session.user.id,
-        action: "create_customer",
-        entityType: "customer",
-        entityId: customer.id.toString(),
-        details: { customerName: customer.fullName },
-        ipAddress: req.ip || "",
-      });
-      
-      res.status(201).json(customer);
-    } catch (error) {
-      console.error("Create customer error:", error);
-      res.status(400).json({ message: "Failed to create customer" });
-    }
-  });
+  app.post("/api/create/customer", requireAuth, async (req, res) => {
+  try {
+    const { phoneNumber, aadhaarNumber } = req.body;
 
-  // Loan routes
+    // 1. Check for existing customer with same phone or Aadhaar
+    const existing = await storage.findCustomerByPhoneOrAadhaar(phoneNumber, aadhaarNumber);
+    if (existing) {
+      return res.status(400).json({ message: "Customer already exists with same Aadhaar or phone number." });
+    }
+
+    // 2. Prepare customer data
+    const parsedData = {
+      ...req.body,
+      operatorId: req.session.user.id,
+      dateOfBirth: req.body.dateOfBirth ? new Date(req.body.dateOfBirth) : undefined,
+    };
+
+    const customerData = insertCustomerSchema.parse(parsedData);
+
+    // 3. Create customer
+    const customer = await storage.createCustomer(customerData);
+
+    // 4. Log activity
+    await storage.logActivity({
+      userId: req.session.user.id,
+      action: "create_customer",
+      entityType: "customer",
+      entityId: customer.id.toString(),
+      details: { customerName: [customer.fullName] },
+      ipAddress: req.ip || "",
+    });
+
+    res.status(201).json(customer);
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      console.error("Zod validation error:", error.flatten());
+    } else {
+      console.error("Unexpected error:", error);
+    }
+    res.status(400).json({ message: "Failed to create customer" });
+  }
+});
+
+
+
+
+ 
+  
+
+
+  
   app.get("/api/loans", requireAuth, async (req, res) => {
-    try {
-      const { status, customerId } = req.query;
-      const operatorId = req.session.user.role === "operator" ? req.session.user.id : undefined;
-      
-      const loans = await storage.getLoans({
-        status: status as string,
-        operatorId,
-        customerId: customerId ? parseInt(customerId as string) : undefined,
-      });
-      
-      res.json(loans);
-    } catch (error) {
-      console.error("Get loans error:", error);
-      res.status(500).json({ message: "Failed to fetch loans" });
-    }
-  });
+  try {
+    const { status, customerId, search } = req.query;
 
-  app.get("/api/loans/:id", requireAuth, async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      const loan = await storage.getLoan(id);
-      
-      if (!loan) {
-        return res.status(404).json({ message: "Loan not found" });
+    let loans = await storage.getLoans({
+      status: status as string,
+      customerId: customerId ? parseInt(customerId as string) : undefined,
+    });
+
+    if (search) {
+      const lower = search.toString().toLowerCase();
+      loans = loans.filter((loan) => {
+        return (
+          loan.loanId.toLowerCase().includes(lower) ||
+          loan.customer?.fullName.toLowerCase().includes(lower) ||
+          loan.customer?.phoneNumber.includes(lower)
+        );
+      });
+    }
+
+    res.json(loans);
+  } catch (error) {
+    console.error("Get loans error:", error);
+    res.status(500).json({ message: "Failed to fetch loans" });
+  }
+});
+
+
+app.get("/api/loans/:id", requireAuth, async (req, res) => {
+  try {
+    const id = req.params.id;
+    const loan = await storage.getLoan(id);
+    
+    if (!loan) {
+      return res.status(404).json({ message: "Loan not found" });
+    }
+    
+    res.status(200).json(loan);
+  } catch (error) {
+    console.error("Get loan error:", error);
+    res.status(500).json({ message: "Failed to fetch loan" });
+  }
+});
+
+app.get("/api/loans/due-this-week", requireAuth, async (req, res) => {
+  try {
+    // Ensure loan statuses are up to date first
+    await storage.updateLoanStatuses();
+
+    const dueLoans = await storage.givedueloan();
+    
+
+    res.status(200).json(dueLoans);
+  } catch (err) {
+    console.error("Failed to fetch due loans:", err);
+    res.status(500).json({ message: "Failed to get due loans" });
+  }
+});
+
+// Get total interest amount for a loan
+app.get("/api/loans/:id/interest", requireAuth, async (req, res) => {
+  try {
+    const loanId = req.params.id;
+
+    if (!loanId) {
+      return res.status(400).json({ message: "Loan ID is required" });
+    }
+
+    const interestAmount = await storage.getInterestAmountForLoan(loanId);
+
+    res.json({ loanId, interestAmount });
+  } catch (error) {
+    console.error("Error calculating interest:", error);
+    res.status(500).json({ message: "Failed to calculate interest" });
+  }
+});
+
+
+ app.post("/api/loans", requireAuth, async (req, res) => {
+  try {
+    // Count existing loans to generate a new loanId
+    const loanCount = await storage.getLoans({});
+
+    const categories = await storage.getLoanCategories();
+
+    const categoryId = req.body.loanCategoryId;
+
+    let CatName;
+
+    categories.map((cat)=>{
+      if(cat.id===categoryId){
+        CatName = cat.name;
+      }else{
+        CatName = 'GL';
       }
-      
-      res.json(loan);
-    } catch (error) {
-      console.error("Get loan error:", error);
-      res.status(500).json({ message: "Failed to fetch loan" });
-    }
-  });
+    })
+    const loanId = `${CatName}-${new Date().getDate()}${new Date().getMonth() + 1}${new Date().getFullYear()}-${String(loanCount.length + 1).padStart(3, "0")}`;
+    // +1 is used because getMonth() returns a zero-based month index (0 for January, 11 for December)
+    const startDate = new Date();
 
-  app.post("/api/loans", requireAuth, async (req, res) => {
-    try {
-      // Generate loan ID
-      const loanCount = await storage.getLoans({});
-      const loanId = `GL-${new Date().getFullYear()}-${String(loanCount.length + 1).padStart(3, '0')}`;
-      
-      const loanData = insertLoanSchema.parse({
-        ...req.body,
-        loanId,
-        operatorId: req.session.user.id,
-      });
-      
-      const loan = await storage.createLoan(loanData);
-      
-      await storage.logActivity({
-        userId: req.session.user.id,
-        action: "create_loan",
-        entityType: "loan",
-        entityId: loan.id.toString(),
-        details: { loanId: loan.loanId, amount: loan.loanAmount },
-        ipAddress: req.ip || "",
-      });
-      
-      res.status(201).json(loan);
-    } catch (error) {
-      console.error("Create loan error:", error);
-      res.status(400).json({ message: "Failed to create loan" });
+    const parsedData = {
+      ...req.body,
+      loanId,
+      operatorId: req.session.user.id,
+      loanAmount: req.body.loanAmount.toString(),
+      goldWeight: req.body.goldWeight.toString(),
+      goldPurity: req.body.goldPurity.toString(),
+    };
+
+    const loanData = insertLoanSchema.parse(parsedData);
+    const loan = await storage.createLoan(loanData);
+
+    await storage.logActivity({
+      userId: req.session.user.id,
+      action: "create_loan",
+      entityType: "loan",
+      entityId: loan.id.toString(),
+      details: { loanId: [loan.loanId], amount: [loan.loanAmount] , createdBy:[ `${req.session.user.firstName} ${req.session.user.lastName}`] },
+      ipAddress: req.ip || "",
+    });
+
+    res.status(201).json(loan);
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      console.error("Zod validation error:", error.flatten());
+    } else {
+      console.error("Unexpected error:", error);
     }
-  });
+    res.status(400).json({ message: "Failed to create loan" });
+  }
+});
 
   app.get("/api/customers/:customerId/loans", requireAuth, async (req, res) => {
     try {
@@ -272,7 +533,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         action: "create_payment",
         entityType: "payment",
         entityId: payment.id.toString(),
-        details: { amount: payment.amount, loanId: payment.loanId },
+        details: { amount: [payment.amount], loanId: [payment.loanId] },
         ipAddress: req.ip || "",
       });
       
@@ -286,8 +547,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Admin: Create operator (Admin only)
   app.post("/api/admin/operators", requireAdmin, async (req: any, res) => {
     try {
-      const { username, email, firstName, lastName, permissions } = req.body;
-      
+      const { username, email, firstName, lastName, permissions ,password} = req.body;
+
+      const passwordRegex = /^(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]).{8,}$/;
+
+
+      if (!passwordRegex.test(password)) {
+        return res.status(400).json({
+          message: "Password must be at least 8 characters long and include an uppercase letter, a number, and a special character.",
+        });
+}
+
       // Check if user already exists
       const existingUser = await storage.getUserByUsername(username);
       if (existingUser) {
@@ -297,6 +567,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const operatorId = `operator_${username}_${Date.now()}`;
       const newOperator = await storage.upsertUser({
         id: operatorId,
+        password,
         username,
         email,
         firstName,
@@ -311,7 +582,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         action: "create_operator",
         entityType: "operator",
         entityId: newOperator.id,
-        details: { operatorName: `${firstName} ${lastName}`, username },
+        details: { operatorName: [`${firstName} ${lastName}`], username: [username] },
         ipAddress: req.ip || "",
       });
       
@@ -319,7 +590,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         operator: newOperator,
         credentials: {
           username,
-          password: "operator123",
+          password,
           message: "Operator can login with any password using this username"
         }
       });
@@ -328,6 +599,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Failed to create operator" });
     }
   });
+
+
+
+  app.get("/api/admin/fetch/operators", requireAdmin, async (req, res) => {
+  try {
+    const operators = await storage.getOperators();
+    res.json(operators);
+  } catch (error) {
+    console.error("Failed to fetch operators", error);
+    res.status(500).json({ message: "Error fetching operators" });
+  }
+});
+
 
   // Admin routes
   app.get("/api/operators", requireAdmin, async (req, res) => {
@@ -340,41 +624,55 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.put("/api/operators/:id/permissions", requireAdmin, async (req, res) => {
-    try {
-      const { id } = req.params;
-      const { permissions } = req.body;
-      
-      const operator = await storage.updateOperatorPermissions(id, permissions);
-      
-      await storage.logActivity({
-        userId: req.session.user.id,
-        action: "update_operator_permissions",
-        entityType: "operator",
-        entityId: id,
-        details: { permissions: permissions },
-        ipAddress: req.ip || "",
-      });
-      
-      res.json(operator);
-    } catch (error) {
-      console.error("Update operator permissions error:", error);
-      res.status(400).json({ message: "Failed to update operator permissions" });
-    }
-  });
+ app.put("/api/operators/:id/permissions", requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { permissions } = req.body;
 
-  app.put("/api/operators/:id/deactivate", requireAdmin, async (req: any, res) => {
+    const validPermissions = ["view", "create", "edit", "delete", "all"];
+    if (!Array.isArray(permissions) || !permissions.every(p => validPermissions.includes(p))) {
+      return res.status(400).json({ message: "Invalid permissions format" });
+    }
+
+    const operators = await storage.getOperators();
+    const foundOperator = operators.find(o => o.id === id);
+    if (!foundOperator) {
+      return res.status(404).json({ message: "Operator not found" });
+    }
+
+    const updated = await storage.updateOperatorPermissions(id, permissions);
+
+    await storage.logActivity({
+      userId: req.session.user.id,
+      action: "update_operator_permissions",
+      entityType: "operator",
+      entityId: id,
+      details:{ operatorName:[ `${foundOperator.firstName} ${foundOperator.lastName}`] },
+      ipAddress: req.ip || "",
+    });
+
+    return res.status(200).json(updated);
+  } catch (error) {
+    console.error("Update operator permissions error:", error);
+    return res.status(500).json({ message: "Failed to update operator permissions" });
+  }
+});
+
+
+  app.put("/api/operators/deactivate/:id", requireAdmin, async (req: Request, res) => {
     try {
       const { id } = req.params;
       
       const operator = await storage.deactivateOperator(id);
+
       
+
       await storage.logActivity({
         userId: req.session.user.id,
         action: "deactivate_operator",
         entityType: "operator",
         entityId: id,
-        details: { operatorName: `${operator.firstName} ${operator.lastName}` },
+        details: { operatorName: [`${operator.firstName} ${operator.lastName}`] },
         ipAddress: req.ip || "",
       });
       
@@ -382,6 +680,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Deactivate operator error:", error);
       res.status(400).json({ message: "Failed to deactivate operator" });
+    }
+  });
+
+  app.put("/api/operators/reactivate/:id", requireAdmin, async (req: Request, res) => {
+    try {
+      const { id } = req.params;
+      
+      const operator = await storage.reactivateOperator(id);
+
+      
+
+      await storage.logActivity({
+        userId: req.session.user.id,
+        action: "reactivate_operator",
+        entityType: "operator",
+        entityId: id,
+        details: { operatorName: [`${operator.firstName} ${operator.lastName}`] },
+        ipAddress: req.ip || "",
+      });
+      
+      res.json({ message: "Operator reactivated successfully" });
+    } catch (error) {
+      console.error("Reactivate operator error:", error);
+      res.status(400).json({ message: "Failed to reactivate operator" });
     }
   });
 
@@ -430,7 +752,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         action: "create_form_field",
         entityType: "form_field",
         entityId: field.id.toString(),
-        details: { fieldName: field.fieldName, formType: field.formType },
+        details: { fieldName: [field.fieldName], formType: [field.formType ]},
         ipAddress: req.ip || "",
       });
       
@@ -438,6 +760,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Create form field error:", error);
       res.status(400).json({ message: "Failed to create form field" });
+    }
+  });
+
+  // Close a loan (Admin only)
+  app.put("/api/loans/:id/close", requireAdmin, async (req, res) => {
+    try {
+      const loanId = req.params.id
+      if (!loanId) {
+        return res.status(400).json({ message: "Invalid loan ID" });
+      }
+
+      const closedLoan = await storage.closeLoan(loanId, req.session.user.id);
+
+      await storage.logActivity({
+        userId: req.session.user.id,
+        action: "close_loan",
+        entityType: "loan",
+        entityId: loanId.toString(),
+        details: { closedBy: [`${req.session.user.username}`],loanId:[`${loanId}`] },
+        ipAddress: req.ip || "",
+      });
+
+      res.json(closedLoan);
+    } catch (error) {
+      console.error("Close loan error:", error);
+      res.status(400).json({ message: "Failed to close loan" });
     }
   });
 

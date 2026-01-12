@@ -12,7 +12,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
-import { z } from "zod";
+import { number, z } from "zod";
 
 // Session storage table for authentication
 export const sessions = pgTable(
@@ -25,10 +25,22 @@ export const sessions = pgTable(
   (table) => [index("IDX_session_expire").on(table.expire)],
 );
 
+
+
+// login schema
+
+export const loginSchema = z.object({
+  username: z.string().min(1),
+  password: z.string().min(1),
+  role: z.enum(["operator", "admin"]),
+});
+
+
 // Users table for authentication
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().notNull(),
   username: varchar("username").unique().notNull(),
+  password: varchar("password").notNull(),
   email: varchar("email").unique(),
   firstName: varchar("first_name"),
   lastName: varchar("last_name"),
@@ -56,6 +68,23 @@ export const customers = pgTable("customers", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// categories table
+export const loanCategories = pgTable("loan_categories", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull()
+});
+
+// range table
+
+export const loanInterestRanges = pgTable("loan_interest_ranges", {
+  id: serial("id").primaryKey(),
+  categoryId: integer("category_id").references(() => loanCategories.id, { onDelete: "cascade" }).notNull(),
+  fromDays: integer("from_days").notNull(),       // e.g., 0
+  toDays: integer("to_days").notNull(),           // e.g., 30
+  interestPercent: decimal("interest_percent", { precision: 5, scale: 2 }).notNull(), // e.g., 1.25%
+});
+
+
 // Loans table
 export const loans = pgTable("loans", {
   id: serial("id").primaryKey(),
@@ -65,36 +94,52 @@ export const loans = pgTable("loans", {
   loanAmount: decimal("loan_amount", { precision: 10, scale: 2 }).notNull(),
   goldWeight: decimal("gold_weight", { precision: 8, scale: 2 }).notNull(), // in grams
   goldPurity: varchar("gold_purity").default("22K"),
-  interestRate: decimal("interest_rate", { precision: 5, scale: 2 }).notNull(),
-  duration: integer("duration").notNull(), // in months
+  loanCategoryId: integer("loan_category_id").references(() => loanCategories.id).notNull(),
   status: varchar("status", { 
     enum: ["active", "due", "overdue", "closed", "defaulted"] 
   }).notNull().default("active"),
   issueDate: timestamp("issue_date").defaultNow(),
-  dueDate: timestamp("due_date").notNull(),
   customFields: jsonb("custom_fields").$type<Record<string, any>>().default({}),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+export type LoanWithRelations = Loan & {
+  customer: Customer;
+  operator: User;
+};
+
+
 // Payments table for loan payments
 export const payments = pgTable("payments", {
   id: serial("id").primaryKey(),
-  loanId: integer("loan_id").references(() => loans.id).notNull(),
+
+  loanId: varchar("loan_id", { length: 50 }).references(() => loans.loanId).notNull(),
+
   amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
-  paymentDate: timestamp("payment_date").defaultNow(),
-  paymentType: varchar("payment_type", { 
-    enum: ["interest", "principal", "penalty", "full"] 
+
+  paymentDate: varchar("payment_date", { length: 50 }).notNull(),
+  paymentType: varchar("payment_type", {
+    enum: ["interest", "principal", "penalty", "full"],
   }).notNull(),
+
+  paymentMode: varchar("payment_mode", {
+    enum: ["cash", "upi", "banktransfer", "check"],
+  }).notNull(),
+
   operatorId: varchar("operator_id").references(() => users.id).notNull(),
+
   notes: text("notes"),
+
   createdAt: timestamp("created_at").defaultNow(),
 });
+
 
 // Form fields configuration
 export const formFields = pgTable("form_fields", {
   id: serial("id").primaryKey(),
   formType: varchar("form_type", { enum: ["customer", "loan"] }).notNull(),
+  fieldValue: integer("value").default(0), // ✅ numeric, not integer
   fieldName: varchar("field_name").notNull(),
   fieldLabel: varchar("field_label").notNull(),
   fieldType: varchar("field_type", { 
@@ -178,6 +223,14 @@ export const insertCustomerSchema = createInsertSchema(customers).omit({
   updatedAt: true,
 });
 
+export const insertCategorySchema = createInsertSchema(loanCategories).omit({
+  id: true,
+});
+
+export const insertIntrestRangesSchema = createInsertSchema(loanInterestRanges).omit({
+  id: true,
+});
+
 export const insertLoanSchema = createInsertSchema(loans).omit({
   id: true,
   createdAt: true,
@@ -218,3 +271,21 @@ export type InsertFormField = z.infer<typeof insertFormFieldSchema>;
 
 export type ActivityLog = typeof activityLogs.$inferSelect;
 export type InsertActivityLog = z.infer<typeof insertActivityLogSchema>;
+
+export type LoanCategory = typeof loanCategories.$inferSelect;
+export type InsertLoanCategory = z.infer<typeof insertCategorySchema>;
+
+export type CategoryRange = typeof loanInterestRanges.$inferSelect;
+export type InsertCategoryRange = z.infer<typeof insertIntrestRangesSchema>;
+
+
+export const insertLoanCategorySchema = z.object({
+  name: z.string().min(2),
+});
+
+export const insertCategoryRangeSchema = z.object({
+  categoryId: z.number(),
+  fromDays: z.number().min(0),
+  toDays: z.number().min(1),
+  interestRate: z.string(), // or .number().refine(...) if you want strict control
+});

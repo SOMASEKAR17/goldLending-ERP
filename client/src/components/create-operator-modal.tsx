@@ -14,6 +14,7 @@ import { apiRequest } from "@/lib/queryClient";
 const operatorSchema = z.object({
   username: z.string().min(3, "Username must be at least 3 characters"),
   email: z.string().email("Invalid email address"),
+  password: z.string().min(8, "Password must be at least 8 characters long").regex(/^(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]).{8,}$/, "Password must include an uppercase letter, a number, and a special character."),
   firstName: z.string().min(1, "First name is required"),
   lastName: z.string().min(1, "Last name is required"),
   permissions: z.array(z.string()).default(["view", "create", "edit"]),
@@ -174,9 +175,22 @@ export default function CreateOperatorModal({ isOpen, onClose }: CreateOperatorM
             </div>
 
             <div>
+              <Label htmlFor="password">Password</Label>
+              <Input
+                id="password"
+                type="password"
+                {...register("password")}
+                placeholder="********"
+              />
+              {errors.password && (
+                <p className="text-sm text-red-600 mt-1">{errors.password.message}</p>
+              )}
+            </div>
+
+            <div>
               <Label>Permissions</Label>
               <div className="space-y-2 mt-2">
-                {["view", "create", "edit", "delete"].map((permission) => (
+                {["view", "create", "edit"].map((permission) => (
                   <div key={permission} className="flex items-center space-x-2">
                     <Checkbox
                       id={permission}

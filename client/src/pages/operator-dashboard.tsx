@@ -22,7 +22,12 @@ export default function OperatorDashboard() {
       case "search":
         return <CustomerSearch onViewProfile={setSelectedCustomerId} />;
       case "register":
-        return <CustomerRegistration />;
+        return (
+          <CustomerRegistration
+            isOpen={activeSection === "register"}
+            onClose={() => setActiveSection("search")}
+          />
+        );
       case "loans":
         return <ActiveLoans />;
       default:
@@ -64,9 +69,10 @@ export default function OperatorDashboard() {
       </div>
 
       {/* Customer Profile Modal */}
-      {selectedCustomerId && (
+      {selectedCustomerId !== null && (
         <CustomerProfileModal
           customerId={selectedCustomerId}
+          isOpen={selectedCustomerId !== null}
           onClose={() => setSelectedCustomerId(null)}
         />
       )}

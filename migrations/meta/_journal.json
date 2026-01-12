@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1751616662302,
+      "tag": "0000_third_quasar",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1751701514923,
+      "tag": "0001_bumpy_daredevil",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1751703728632,
+      "tag": "0002_conscious_shinko_yamashiro",
+      "breakpoints": true
+    }
+  ]
+}
