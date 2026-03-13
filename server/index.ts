@@ -11,9 +11,11 @@ dotenv.config();
 const PostgresStore = connectPg(session);
 
 const app = express();
+app.set("trust proxy", 1);
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
+
 
 // Session configuration using PostgreSQL store
 app.use(session({

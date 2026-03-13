@@ -215,7 +215,14 @@ app.delete("/api/category-ranges/:id", requireAdmin, async (req, res) => {
         ipAddress: req.ip || "",
       });
       
-      res.json(user);
+      req.session.save((err) => {
+        if (err) {
+          console.error("Session save error:", err);
+          return res.status(500).json({ message: "Failed to save session" });
+        }
+        res.json(user);
+      });
+
     } catch (error) {
       console.error("Login error:", error);
       res.status(400).json({ message: "Invalid credentials" });
