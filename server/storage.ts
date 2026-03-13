@@ -24,8 +24,9 @@ import {
   type LoanCategory,
   type InsertCategoryRange,
   type CategoryRange,
-} from "@shared/schema";
-import { db } from "./db";
+} from "../shared/schema.js";
+import { db } from "./db.js";
+
 import { eq, and, or, like, desc, asc, count, sql } from "drizzle-orm";
 
 

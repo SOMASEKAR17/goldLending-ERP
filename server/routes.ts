@@ -1,6 +1,6 @@
 import type { Express, Request } from "express";
 import { createServer, type Server } from "http";
-import { storage } from "./storage";
+import { storage } from "./storage.js";
 import { 
   insertCustomerSchema, 
   insertLoanSchema, 
@@ -8,13 +8,14 @@ import {
   insertFormFieldSchema,
   insertLoanCategorySchema,
   insertCategoryRangeSchema
-} from "@shared/schema";
+} from "../shared/schema.js";
 import { z } from "zod";
 
-import {db } from "./db";
+import {db } from "./db.js";
 
 
-import { loginSchema } from "@shared/schema";
+import { loginSchema } from "../shared/schema.js";
+
 import { log } from "console";
 
 // Extend Express Request interface to include session
