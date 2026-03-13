@@ -1,7 +1,7 @@
 import express, { type Request, Response, NextFunction } from "express";
 import session from "express-session";
 import { registerRoutes } from "./routes.js";
-import { setupVite, serveStatic, log } from "./vite.js";
+import { log, serveStatic } from "./utils.js";
 import dotenv from "dotenv";
 import connectPg from "connect-pg-simple";
 import { pool } from "./db.js";
@@ -79,6 +79,7 @@ if (app.get("env") === "development") {
 }
 
 async function setupApp() {
+  const { setupVite } = await import("./vite.js");
   const server = await registerRoutes(app);
   await setupVite(app, server);
 }
